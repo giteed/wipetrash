@@ -95,12 +95,10 @@ main() {
       v|V)
         view_reports
         ;;
-
       r|R)
         "$SCRIPT_DIR/clean_trash.sh" --repair
         read -rp "Нажмите Enter для продолжения..."
         ;;
-
       h|H)
         show_help
         ;;
@@ -111,21 +109,22 @@ main() {
         echo "Неверный ввод!"
         read -rp "Нажмите Enter для продолжения..."
         ;;
-
-*)
-  local idx=$((choice - 2))
-  if (( idx >= 0 && idx < ${#MAP_FILES[@]} )); then
-    local target="${MAP_FILES[idx]}"
-    echo -e "${YELLOW}Очистка только: $target${NC}"
-    log_file=$("$SCRIPT_DIR/clean_trash.sh" "$target")
-    echo -e "\nОтчёт: $log_file"
-    read -rp "Нажмите Enter для продолжения..."
-  elif (( choice == (${#MAP_FILES[@]} + 2) )); then
-  
-  esac
-  ;;
+      *)
+        local idx=$((choice - 2))
+        if (( idx >= 0 && idx < ${#MAP_FILES[@]} )); then
+          local target="${MAP_FILES[idx]}"
+          echo -e "${YELLOW}Очистка только: $target${NC}"
+          log_file=$("$SCRIPT_DIR/clean_trash.sh" "$target")
+          echo -e "\nОтчёт: $log_file"
+          read -rp "Нажмите Enter для продолжения..."
+        elif (( choice == (${#MAP_FILES[@]} + 2) )); then
+          # Добавьте код для обработки этого случая
+        fi
+        ;;
+    esac
   done
 }
+
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   main
