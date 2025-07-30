@@ -8,6 +8,8 @@ IFS=$'\n\t'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,9 +19,11 @@ CONF_DENY="$SCRIPT_DIR/trash_deny.conf"
 REPORT_DIR="$SCRIPT_DIR/reports"
 
 # Инициализация директорий
-mkdir -p "$REPORT_DIR" || {
-  echo -e "${RED}Ошибка создания $REPORT_DIR${NC}" >&2
-  exit 1
+init_dirs() {
+  mkdir -p "$REPORT_DIR" || {
+    echo -e "${RED}Ошибка создания $REPORT_DIR${NC}" >&2
+    exit 1
+  }
 }
 
 # Проверка утилиты wipe
@@ -48,6 +52,7 @@ load_lists() {
       MAP_FILES+=("$path")
     done <"$cfg"
   done
+  return 0
 }
 
 # Проверка запрещенных путей
@@ -59,3 +64,8 @@ deny_match() {
 # Логирование
 log() { echo -e "$*" >>"$logfile"; }
 err() { echo -e "✖ $*" >>"$logfile"; }
+
+# Генерация случайного имени
+generate_random_name() {
+  tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1
+}
