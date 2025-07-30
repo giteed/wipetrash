@@ -33,33 +33,35 @@ wipe_dir_contents() {
   local removed_files=0
   local removed_dirs=0
   
-  # Удаление файлов
-  echo -e "${YELLOW}Удаление файлов в: $dir${NC}"
+  # Удаление файлов (без вывода в арифметический контекст)
+  echo -e "${YELLOW}Удаление файлов в: $dir${NC}" >&2
   while IFS= read -r -d $'\0' file; do
-    wipe_one "$file" && ((removed_files++))
+    if wipe_one "$file"; then
+      removed_files=$((removed_files + 1))
+    fi
   done < <(find "$dir" -type f -print0 2>/dev/null)
 
   # Удаление пустых подпапок
-  echo -e "${YELLOW}Поиск пустых подпапок в: $dir${NC}"
+  echo -e "${YELLOW}Поиск пустых подпапок в: $dir${NC}" >&2
   while IFS= read -r -d $'\0' subdir; do
     if [[ "$subdir" != "$dir" ]]; then
-      random_name="del_$(generate_random_name)"
+      random_name="del_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1)"
       new_path="$(dirname "$subdir")/$random_name"
       
       if mv "$subdir" "$new_path" 2>/dev/null; then
         if rm -rf "$new_path" 2>/dev/null; then
-          echo -e "${GREEN}Удалено: $subdir${NC}"
-          ((removed_dirs++))
+          echo -e "${GREEN}Удалено: $subdir${NC}" >&2
+          removed_dirs=$((removed_dirs + 1))
         else
-          echo -e "${RED}Ошибка удаления: $new_path${NC}"
+          echo -e "${RED}Ошибка удаления: $new_path${NC}" >&2
         fi
       else
-        echo -e "${RED}Ошибка переименования: $subdir${NC}"
+        echo -e "${RED}Ошибка переименования: $subdir${NC}" >&2
       fi
     fi
   done < <(find "$dir" -type d -empty -print0 2>/dev/null | sort -rz)
 
-  echo -e "${GREEN}Удалено файлов: $removed_files, папок: $removed_dirs${NC}"
+  echo -e "${GREEN}Удалено файлов: $removed_files, папок: $removed_dirs${NC}" >&2
   echo $((removed_files + removed_dirs))
 }
 
@@ -67,7 +69,7 @@ run_clean() {
   logfile="$REPORT_DIR/report_$(date '+%F-%H-%M-%S').log"
   : >"$logfile"
   load_lists || return 1
-  local removed=0
+  local removed_total=0
 
   for path in "${MAP_FILES[@]}"; do
     if deny_match "$path"; then
@@ -75,24 +77,27 @@ run_clean() {
       continue
     fi
     
-    echo -e "\n${GREEN}--- $path ---${NC}"
+    echo -e "\n${GREEN}--- $path ---${NC}" >&2
     if [[ -f "$path" || -L "$path" ]]; then
-      wipe_one "$path" && ((removed++))
+      if wipe_one "$path"; then
+        removed_total=$((removed_total + 1))
+      fi
     elif [[ -d "$path" ]]; then
       before=$(find "$path" -type f | wc -l)
-      echo "Файлов до: $before"
+      echo "Файлов до: $before" >&2
       n=$(wipe_dir_contents "$path")
-      ((removed += n))
+      removed_total=$((removed_total + n))
       after=$(find "$path" -type f | wc -l)
-      echo "Файлов после: $after"
+      echo "Файлов после: $after" >&2
     else
       err "не найдено: $path"
     fi
   done
 
-  log "Всего удалено объектов: $removed"
+  log "Всего удалено объектов: $removed_total"
   echo "$logfile"
 }
+
 
 repair_trash_dirs() {
   load_lists || return 1
