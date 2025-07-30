@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# clean_trash – движок (wipe + прогресс + отчёт)
-# 5.3.0 — 30 Jul 2025
+# clean_trash – движок (wipe + прогресс + отчёт, без rm)
+# 5.3.1 — 30 Jul 2025
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -15,14 +15,17 @@ CONF_MANUAL="$SCRIPT_DIR/trash_manual.conf"
 CONF_DENY="$SCRIPT_DIR/trash_deny.conf"
 REPORT_DIR="$SCRIPT_DIR/reports"; mkdir -p "$REPORT_DIR"
 
-WIPE_PASSES="${WIPE_PASSES:-1}"          # сколько проходов (1 — быстро, >1 — дольше)
-WIPE_SILENT="${WIPE_SILENT:-0}"          # 1 => тихий режим
+WIPE_PASSES="${WIPE_PASSES:-1}"          # сколько проходов (по‑умолчанию 1)
+WIPE_SILENT="${WIPE_SILENT:-0}"          # 1 → wipe -q
 
 ###############################################################################
-# 0. гарантируем наличие wipe
+# 0. проверяем wipe
 ###############################################################################
 ensure_wipe() {
-  command -v wipe &>/dev/null && return
+  if command -v wipe &>/dev/null; then
+      echo -e "${GREEN}✓ wipe найден: $(command -v wipe)${NC}"
+      return
+  fi
   echo -e "${YELLOW}«wipe» не найден.${NC}"
   if ! command -v apt-get &>/dev/null; then
       echo -e "${RED}apt‑get недоступен. Установите «wipe» вручную!${NC}"
@@ -40,24 +43,30 @@ deny_match(){ [[ -f $CONF_DENY && $(grep -Fx "$1" "$CONF_DENY") ]] || [[ $1 == /
 
 logfile=""; log(){ echo -e "$*" >>"$logfile"; }; err(){ echo -e "✖ $*" >>"$logfile"; }
 
-wipe_one() {          # $1 = файл
-  local opt_silent=( )
-  (( WIPE_SILENT )) && opt_silent+=( -q )
-  wipe -f -Q "$WIPE_PASSES" "${opt_silent[@]}" -- "$1" 2>>"$logfile" \
-      && log "wipe файл: $1" \
-      || { rm -f -- "$1" 2>>"$logfile"; err "rm файл: $1"; }
+wipe_one() {                         # $1 = файл
+  local opts=( -f -Q "$WIPE_PASSES" ); (( WIPE_SILENT )) && opts+=( -q )
+  if wipe "${opts[@]}" -- "$1" 2>>"$logfile"; then
+      log "wipe файл: $1"
+  else
+      err "wipe‑error: $1"
+      # rm -f -- "$1" 2>>"$logfile"         # ← отключено по требованию
+  fi
 }
 
 wipe_file(){ wipe_one "$1"; }
 
-wipe_dir_contents(){                # stdout → кол‑во удалённых, stderr → progress
+wipe_dir_contents(){                 # stdout → кол‑во удалённых, stderr → progress
   local d=$1 removed=0
   mapfile -d '' items < <(find "$d" -mindepth 1 -print0 2>/dev/null || true)
   local total=${#items[@]} i=0
   for p in "${items[@]}"; do
     ((i++)); printf "\r${YELLOW}%s${NC} %d/%d" "$d" "$i" "$total" >&2
-    if [[ -f $p || -L $p ]]; then wipe_file "$p" && ((removed++))
-    else rm -rf -- "$p" 2>>"$logfile" && log "rm каталог: $p" || err "каталог: $p"; fi
+    if [[ -f $p || -L $p ]]; then
+        wipe_file "$p" && ((removed++))
+    else
+        # rm -rf -- "$p" 2>>"$logfile" && log "rm каталог: $p" || err "каталог: $p"
+        err "пропущен каталог (rm отключён): $p"
+    fi
   done
   ((total)) && echo >&2
   echo "$removed"
