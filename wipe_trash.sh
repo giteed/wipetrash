@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wipe_trash – меню
-# 3.2.5 — 30 Jul 2025
+# 3.3.0 — 30 Jul 2025
 # =====================================
 
 set -euo pipefail
@@ -14,8 +14,7 @@ SETUP_MSG="$("$SCRIPT_DIR/setup_wt.sh")"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/clean_trash.sh"
 
-ensure_wipe
-load_lists || true                # ← игнорируем ненулевой код
+load_lists || true        # конфиги могут быть ещё пустыми
 
 ADD="$SCRIPT_DIR/add_safe_dir.sh"
 REPORT_DIR="$SCRIPT_DIR/reports"
@@ -23,7 +22,7 @@ REPORT_DIR="$SCRIPT_DIR/reports"
 clean_history(){ rm -f ~/.local/share/recently-used.xbel 2>/dev/null || true; echo -e "${GREEN}История очищена.${NC}"; }
 
 show(){ echo -e "${BLUE}===========  W I P E   T R A S H  ===========${NC}"
-        echo    "============================================  v3.2.5"
+        echo    "============================================  v3.3.0"
         echo -e "$SETUP_MSG\n"
         echo -e "  ${RED}1${NC}) Очистить ${CYAN}ВСЁ${NC} (корзины + history)\n"
         n=2; for p in "${MAP_FILES[@]}"; do printf "  ${CYAN}%d${NC}) Очистить: ${YELLOW}%s${NC}\n" $n "$p"; ((n++)); done
@@ -40,7 +39,7 @@ while true; do
   read -rp $'\n'"Выберите действие [Enter = 1]: " ch; ch=${ch:-1}
   case $ch in
     1) log=$(run_clean); echo -e "\nОтчёт: $log"; read ;;
-    a|A) "$ADD"; load_lists || true ;;
+    a|A) "$ADD"; load_lists ;;
     v|V) view_reports ;;
     r|R) repair_trash_dirs; read ;;
     h|H) help; read ;;
@@ -50,7 +49,7 @@ while true; do
         if (( idx>=0 && idx<${#MAP_FILES[@]} )); then
           single=("${MAP_FILES[idx]}"); MAP_FILES=("${single[@]}")
           echo -e "${YELLOW}Очистка: ${single[0]}${NC}"
-          log=$(run_clean); load_lists || true
+          log=$(run_clean); load_lists
           echo -e "\nОтчёт: $log"; read
         elif (( ch == (${#MAP_FILES[@]} + 2) )); then
           clean_history; read
