@@ -52,6 +52,18 @@ q — выход
 EOF
 }
 
+
+run_clean() {
+  # Делегируем очистку основному скрипту
+  "$SCRIPT_DIR/clean_trash.sh"
+}
+
+repair_trash_dirs() {
+  # Делегируем починку основному скрипту
+  "$SCRIPT_DIR/clean_trash.sh" --repair
+}
+
+
 main() {
   init_dirs
   ensure_wipe
