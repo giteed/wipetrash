@@ -95,10 +95,12 @@ main() {
       v|V)
         view_reports
         ;;
+
       r|R)
-        repair_trash_dirs
+        "$SCRIPT_DIR/clean_trash.sh" --repair
         read -rp "Нажмите Enter для продолжения..."
         ;;
+
       h|H)
         show_help
         ;;
@@ -109,25 +111,18 @@ main() {
         echo "Неверный ввод!"
         read -rp "Нажмите Enter для продолжения..."
         ;;
-      *)
-        local idx=$((choice - 2))
-        if (( idx >= 0 && idx < ${#MAP_FILES[@]} )); then
-          local target="${MAP_FILES[idx]}"
-          echo -e "${YELLOW}Очистка: $target${NC}"
-          MAP_FILES=("$target")
-          log_file=$(run_clean)
-          load_lists || true
-          echo -e "\nОтчёт: $log_file"
-          read -rp "Нажмите Enter для продолжения..."
-        elif (( choice == (${#MAP_FILES[@]} + 2) )); then
-          clean_history
-          read -rp "Нажмите Enter для продолжения..."
-        else
-          echo "Неверный пункт!"
-          read -rp "Нажмите Enter для продолжения..."
-        fi
-        ;;
-    esac
+
+*)
+  local idx=$((choice - 2))
+  if (( idx >= 0 && idx < ${#MAP_FILES[@]} )); then
+    local target="${MAP_FILES[idx]}"
+    echo -e "${YELLOW}Очистка только: $target${NC}"
+    log_file=$("$SCRIPT_DIR/clean_trash.sh" "$target")
+    echo -e "\nОтчёт: $log_file"
+    read -rp "Нажмите Enter для продолжения..."
+  elif (( choice == (${#MAP_FILES[@]} + 2) )); then
+  
+  esac
   done
 }
 
