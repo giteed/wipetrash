@@ -54,8 +54,12 @@ EOF
 
 
 run_clean() {
-  # Делегируем очистку основному скрипту
-  "$SCRIPT_DIR/clean_trash.sh"
+  if [[ ! -f "$SCRIPT_DIR/clean_trash.sh" ]]; then
+    echo -e "${RED}Ошибка: clean_trash.sh не найден${NC}" >&2
+    return 1
+  fi
+  log_file=$("$SCRIPT_DIR/clean_trash.sh")
+  echo "$log_file"
 }
 
 repair_trash_dirs() {
