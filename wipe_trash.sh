@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wipe_trash.sh - главное меню
-# 3.2.9 - 31 Jul 2025
+# 3.3.0 - 31 Jul 2025
 
 source "$(dirname "${BASH_SOURCE[0]}")/wipe_functions.sh"
 
@@ -15,7 +15,7 @@ clean_history() {
 show_menu() {
   clear
   echo -e "${BLUE}===========  W I P E   T R A S H  ===========${NC}"
-  echo    "============================================  v3.2.9"
+  echo    "============================================  v3.3.0"
   echo -e "$SETUP_MSG\n"
   echo -e "  ${RED}1${NC}) Очистить ${CYAN}ВСЁ${NC} (корзины + history)\n"
   local n=2
@@ -73,7 +73,8 @@ main() {
 
     case "$choice" in
       1)
-        run_clean
+        # Исправлено: передаем все пути из MAP_FILES
+        run_clean "${MAP_FILES[@]}"
         clean_history
         read -rp "Нажмите Enter для продолжения..."
         ;;
