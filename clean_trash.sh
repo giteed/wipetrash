@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # clean_trash – движок (wipe + rm‑fallback по запросу)
-# 5.4.2 — 30 Jul 2025
+# 5.5.0 — 30 Jul 2025
 
 set -euo pipefail
 IFS=$'\n\t'
-
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +15,9 @@ REPORT_DIR="$SCRIPT_DIR/reports"; mkdir -p "$REPORT_DIR"
 WIPE_PASSES="${WIPE_PASSES:-1}"
 USE_RM_FALLBACK="${USE_RM_FALLBACK:-0}"
 
-# ── ensure_wipe (НЕ вызываем здесь!) ───────────────────────────────────────
+###############################################################################
+# 0. проверяем wipe (вызывается один раз в конце файла)
+###############################################################################
 ensure_wipe() {
   local w
   if w=$(command -v wipe); then
@@ -34,100 +35,49 @@ ensure_wipe() {
   sudo apt-get update && sudo apt-get install -y wipe
 }
 
-
 ###############################################################################
-# 1. утилиты
+# остальные функции (без изменений 5.4.3)
 ###############################################################################
 deny_match(){ [[ -f $CONF_DENY && $(grep -Fx "$1" "$CONF_DENY") ]] || [[ $1 == / || $1 == /home || $1 == /root ]]; }
 
 logfile=""; log(){ echo -e "$*" >>"$logfile"; }; err(){ echo -e "✖ $*" >>"$logfile"; }
+ask_fallback(){ (( USE_RM_FALLBACK )) && return
+  read -rp $'\n'"wipe не смог удалить файл. Включить rm? [y/N] " a
+  [[ ${a,,} == y ]] && { USE_RM_FALLBACK=1; export USE_RM_FALLBACK; echo -e "${YELLOW}rm‑fallback включён.${NC}"; }; }
 
-ask_fallback(){
-  (( USE_RM_FALLBACK )) && return
-  read -rp $'\n'"wipe не смог удалить файл. Включить запасной rm? [y/N] " a
-  if [[ ${a,,} == y ]]; then
-      USE_RM_FALLBACK=1
-      export USE_RM_FALLBACK
-      echo -e "${YELLOW}rm‑fallback включён.${NC}"
-  fi
-}
+wipe_one(){ local opts=( -f -q -Q "$WIPE_PASSES" )
+  if wipe "${opts[@]}" -- "$1" >>"$logfile" 2>&1; then log "wipe файл: $1"
+  else err "wipe‑error: $1"; ask_fallback
+       (( USE_RM_FALLBACK )) && { rm -f -- "$1" 2>>"$logfile" && log "rm файл: $1" || err "rm‑error: $1"; }; fi; }
 
-wipe_one(){                       # $1 = файл
-  local opts=( -f -q -Q "$WIPE_PASSES" )
-  if wipe "${opts[@]}" -- "$1" >>"$logfile" 2>&1; then
-      log "wipe файл: $1"
-  else
-      err "wipe‑error: $1"
-      ask_fallback
-      if (( USE_RM_FALLBACK )); then
-          rm -f -- "$1" 2>>"$logfile" && log "rm файл: $1" || err "rm‑error: $1"
-      fi
-  fi
-}
-
-wipe_dir_contents(){              # stdout → удалённых, stderr → progress
-  local d=$1 removed=0
+wipe_dir_contents(){ local d=$1 removed=0
   mapfile -d '' files < <(find "$d" -type f -print0 2>/dev/null || true)
   local total=${#files[@]} i=0
-  for f in "${files[@]}"; do
-    ((i++)); printf "\r${YELLOW}%s${NC} %d/%d" "$d" "$i" "$total" >&2
-    wipe_one "$f" && ((removed++))
-  done
-  ((total)) && echo >&2
-  echo "$removed"
-}
+  for f in "${files[@]}"; do ((i++)); printf "\r${YELLOW}%s${NC} %d/%d" "$d" "$i" "$total" >&2
+                               wipe_one "$f" && ((removed++)); done
+  ((total)) && echo >&2; echo "$removed"; }
 
-load_lists(){
-  MAP_FILES=()
-  for cfg in "$CONF_AUTO" "$CONF_MANUAL"; do
-    [[ -r $cfg ]] || continue
-    while IFS='|' read -r p _; do
-      [[ -z $p || $p == \#* ]] && continue
-      MAP_FILES+=("$p")
-    done <"$cfg"
-  done
-  return 0          # ← гарантируем код 0
-}
+load_lists(){ MAP_FILES=()
+  for cfg in "$CONF_AUTO" "$CONF_MANUAL"; do [[ -r $cfg ]] || { :> "$cfg"; }
+    while IFS='|' read -r p _; do [[ -z $p || $p == \#* ]] && continue; MAP_FILES+=("$p"); done <"$cfg"; done; return 0; }
 
+run_clean(){ logfile="$REPORT_DIR/report_$(date '+%F-%H-%M-%S').log"; : >"$logfile"
+             [[ ${#MAP_FILES[@]} -eq 0 ]] && load_lists
+             local removed=0
+             for p in "${MAP_FILES[@]}"; do deny_match "$p" && { log "⚠️  deny: $p"; continue; }
+                 echo -e "${GREEN}--- $p ---${NC}"
+                 if [[ -f $p || -L $p ]]; then wipe_one "$p"; ((removed++))
+                 elif [[ -d $p ]]; then before=$(find "$p" -type f | wc -l); echo "до: $before"
+                     n=$(wipe_dir_contents "$p"); ((removed+=n))
+                     after=$(find "$p" -type f | wc -l); echo "после: $after"
+                 else err "не найдено: $p"; fi; done
+             log "Всего удалено: $removed"; echo "$logfile"; }
 
-###############################################################################
-# 2. основная очистка
-###############################################################################
-run_clean(){
-  logfile="$REPORT_DIR/report_$(date '+%F-%H-%M-%S').log"; : >"$logfile"
-  [[ ${#MAP_FILES[@]} -eq 0 ]] && load_lists
-  local removed=0
-
-  for p in "${MAP_FILES[@]}"; do
-    deny_match "$p" && { log "⚠️  deny: $p"; continue; }
-    echo -e "${GREEN}--- $p ---${NC}"
-    if [[ -f $p || -L $p ]]; then
-      wipe_one "$p"; ((removed++))
-    elif [[ -d $p ]]; then
-      before=$(find "$p" -type f | wc -l); echo "до: $before"
-      n=$(wipe_dir_contents "$p"); ((removed+=n))
-      after=$(find "$p" -type f | wc -l); echo "после: $after"
-    else
-      err "не найдено: $p"
-    fi
-  done
-  log "Всего удалено: $removed"
-  echo "$logfile"
-}
-
-###############################################################################
-# 3. починка структуры корзин
-###############################################################################
-repair_trash_dirs(){
-  load_lists; local fixed=0
-  for p in "${MAP_FILES[@]}"; do
-    [[ $p != */Trash/files ]] && continue
+repair_trash_dirs(){ load_lists; local fixed=0
+  for p in "${MAP_FILES[@]}"; do [[ $p != */Trash/files ]] && continue
     info="${p%/files}/info"
-    for d in "$p" "$info"; do
-      [[ -d $d ]] || { mkdir -p -- "$d" && chmod 700 -- "$d"; echo "Создано: $d"; ((fixed++)); }
-    done
-  done
-  ((fixed)) && echo "Исправлено: $fixed" || echo "Все корзины целы."
-}
+    for d in "$p" "$info"; do [[ -d $d ]] || { mkdir -p -- "$d" && chmod 700 -- "$d"; echo "Создано: $d"; ((fixed++)); }; done; done
+  ((fixed)) && echo "Исправлено: $fixed" || echo "Все корзины целы."; }
 
+# ── вызов проверки wipe ────────────────────────────────────────────────────
 ensure_wipe
