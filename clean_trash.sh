@@ -72,6 +72,8 @@ wipe_one() {
 wipe_dir_contents() {
   local dir="$1" removed=0
   local files=()
+  
+  # Сначала удаляем все файлы
   while IFS= read -r -d $'\0' file; do
     files+=("$file")
   done < <(find "$dir" -type f -print0 2>/dev/null)
@@ -83,9 +85,21 @@ wipe_dir_contents() {
     wipe_one "$file" && ((removed++))
   done
   ((total)) && echo >&2
+  
+  # Затем обрабатываем пустые папки
+  if (( removed > 0 )); then
+    echo -e "${YELLOW}Удаление пустых подпапок...${NC}"
+    while IFS= read -r -d $'\0' empty_subdir; do
+      if [[ "$empty_subdir" != "$dir" ]]; then
+        random_name="$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1)"
+        new_path="$(dirname "$empty_subdir")/$random_name"
+        mv "$empty_subdir" "$new_path" && rm -rf "$new_path" && ((removed++))
+      fi
+    done < <(find "$dir" -type d -empty -print0 2>/dev/null)
+  fi
+  
   echo "$removed"
 }
-
 load_lists() {
   MAP_FILES=()
   for cfg in "$CONF_AUTO" "$CONF_MANUAL"; do
@@ -122,6 +136,12 @@ run_clean() {
       err "не найдено: $path"
     fi
   done
+  log "Всего удалено: $removed"
+  echo "$logfile"
+
+  echo -e "\n${YELLOW}Очистка пустых папок...${NC}"
+  "$SCRIPT_DIR/clean_empty_dirs.sh"
+  
   log "Всего удалено: $removed"
   echo "$logfile"
 }
