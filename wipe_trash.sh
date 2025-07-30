@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wipe_trash – меню очистки
-# 2.0.1 — 29 Jul 2025
+# 2.1.0 — 29 Jul 2025
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SETUP_MSG="$("$SCRIPT_DIR/setup_wt.sh")"
@@ -10,7 +10,7 @@ source "$SCRIPT_DIR/clean_trash.sh"
 load_config
 
 human() { local s=$1 u=(B K M G T); for x in "${u[@]}"; do ((s<1024))&&{ printf "%d%s" "$s" "$x"; return; }; s=$((s/1024)); done; printf "%dP" "$s"; }
-scan()  { [[ -d $1 ]] || { echo "0|0"; return; }; local c b; c=$(find "$1" ! -type d 2>/dev/null | wc -l); b=$(du -sb "$1" 2>/dev/null | cut -f1); echo "$c|$b"; }
+scan()  { [[ -d $1 ]] || { echo "0|0"; return; }; local c b; c=$(find "$1" ! -type d -print 2>/dev/null | wc -l); b=$(du -sb "$1" 2>/dev/null | cut -f1); echo "$c|$b"; }
 
 show_state() {
   echo "$SETUP_MSG"
@@ -44,12 +44,16 @@ repair() {
 
 help() { cat <<EOF
 
- wipe_trash – безвозвратная очистка корзин и «Недавние файлы».
- ▸ Удаление через wipe (если есть) или rm.
+ wipe_trash – безвозвратная очистка корзин (.Trash-UID) и списка «Недавние файлы».
+
+ ▸ Удаление проходит через wipe (если установлен) либо rm.
  ▸ Пункт «r» чинит структуру корзин.
+ ▸ Пункт «a» добавляет в список свои каталоги для очистки.
 
 EOF
 read -rp "Enter …"; }
+
+ADD_SCRIPT="$SCRIPT_DIR/add_safe_dir.sh"
 
 while true; do
   clear
@@ -58,20 +62,21 @@ while true; do
   echo "  1) Очистить ВСЁ (все корзины + history)"
   for i in "${!LABELS[@]}"; do printf " %2d) Очистить: %s\n" $((i+2)) "${LABELS[i]}"; done
   RECENT=$(( ${#LABELS[@]} + 2 ))
-  printf " %2d) Только history «Недавние файлы»\n" $RECENT
+  printf "\n %2d) Только history «Недавние файлы»\n" $RECENT
+  echo "  a) Добавить каталоги для очистки"
   echo "  r) Проверить/починить структуру"
   echo "  h) Help"
   echo "  q) Quit"
-  read -rp "Выберите действие [Enter = 1]: " choice
+  read -rp $'\n'"Выберите действие [Enter = 1]: " choice
   choice=${choice:-1}
 
-  # фиксируем состояние до
   BEFORE=(); SIZE=()
   for d in "${FILES_DIRS[@]}"; do IFS='|' read -r c b <<<"$(scan "$d")"; BEFORE+=("$c"); SIZE+=("$b"); done
 
   case $choice in
     1) auto_mode ;;
     $RECENT) clean_history ;;
+    a|A) "$ADD_SCRIPT"; load_config; continue ;;         # перечитываем конфиг
     r|R) repair; continue ;;
     h|H) help; continue ;;
     q|Q) echo "Выход…"; exit 0 ;;
