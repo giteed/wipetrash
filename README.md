@@ -246,6 +246,22 @@ ls -t ./reports | head -n 1
 
 ### Структура проекта
 ```
+/wipetrash$ tree
+.
+├── add_safe_dir.sh
+├── Burn_Folder_128x128_43380.png
+├── clean_empty_dirs.sh
+├── clean_trash.sh
+├── README.md
+├── reports
+│   └── report_2025-07-31-01-09-26.log
+├── setup_wt.sh
+├── trash_auto.conf
+├── trash_deny.conf
+├── trash_manual.conf
+├── wipe_functions.sh
+└── wipe_trash.sh
+
 ```
 
 ### Сборка
