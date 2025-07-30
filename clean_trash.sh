@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # clean_trash.sh - основной движок очистки
-# 5.4.6 - 31 Jul 2025
+# 5.4.7 - 31 Jul 2025
 
 source "$(dirname "${BASH_SOURCE[0]}")/wipe_functions.sh"
 
@@ -9,6 +9,11 @@ USE_RM_FALLBACK="${USE_RM_FALLBACK:-0}"
 
 wipe_one() {
   local file="$1"
+  if [[ ! -e "$file" ]]; then
+    err "Файл не существует: $file"
+    return 1
+  fi
+  
   if wipe -f -q -Q "$WIPE_PASSES" -- "$file" >>"$logfile" 2>&1; then
     log "wipe файл: $file"
     return 0
@@ -28,7 +33,10 @@ wipe_dir_contents() {
   
   # Удаление только файлов в указанной папке (без рекурсии)
   local files=()
-  mapfile -t files < <(find "$dir" -maxdepth 1 -type f -print0 2>/dev/null | xargs -0)
+  while IFS= read -r -d $'\0' file; do
+    files+=("$file")
+  done < <(find "$dir" -maxdepth 1 -type f -print0 2>/dev/null)
+  
   local total_files=${#files[@]}
   
   if (( total_files > 0 )); then
@@ -42,7 +50,10 @@ wipe_dir_contents() {
 
   # Удаление только пустых подпапок в указанной папке
   local empty_dirs=()
-  mapfile -t empty_dirs < <(find "$dir" -maxdepth 1 -type d -empty -print0 2>/dev/null | xargs -0)
+  while IFS= read -r -d $'\0' subdir; do
+    empty_dirs+=("$subdir")
+  done < <(find "$dir" -maxdepth 1 -type d -empty -print0 2>/dev/null)
+  
   local total_dirs=${#empty_dirs[@]}
   
   if (( total_dirs > 0 )); then
@@ -55,7 +66,7 @@ wipe_dir_contents() {
       random_name="del_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1)"
       new_path="$(dirname "$subdir")/$random_name"
       
-      if mv "$subdir" "$new_path" 2>/dev/null && rm -rf "$new_path" 2>/dev/null; then
+      if mv -- "$subdir" "$new_path" 2>/dev/null && rm -rf -- "$new_path" 2>/dev/null; then
         removed_dirs=$((removed_dirs + 1))
       fi
     done
