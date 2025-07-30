@@ -1,26 +1,22 @@
 #!/usr/bin/env bash
-# clean_trash – движок (wipe + прогресс + rm‑fallback по запросу)
-# 5.4.1 — 30 Jul 2025
+# clean_trash – движок (wipe + rm‑fallback по запросу)
+# 5.4.2 — 30 Jul 2025
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# ── цвета ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
-# ── переменные ─────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF_AUTO="$SCRIPT_DIR/trash_auto.conf"
 CONF_MANUAL="$SCRIPT_DIR/trash_manual.conf"
 CONF_DENY="$SCRIPT_DIR/trash_deny.conf"
 REPORT_DIR="$SCRIPT_DIR/reports"; mkdir -p "$REPORT_DIR"
 
-WIPE_PASSES="${WIPE_PASSES:-1}"       # 1 — быстро; >1 — дольше
+WIPE_PASSES="${WIPE_PASSES:-1}"
 USE_RM_FALLBACK="${USE_RM_FALLBACK:-0}"
 
-###############################################################################
-# 0. проверяем wipe
-###############################################################################
+# ── ensure_wipe (НЕ вызываем здесь!) ───────────────────────────────────────
 ensure_wipe() {
   local w
   if w=$(command -v wipe); then
@@ -37,6 +33,7 @@ ensure_wipe() {
   [[ ${ans:-Y} =~ ^[Nn]$ ]] && { echo "Отмена."; exit 1; }
   sudo apt-get update && sudo apt-get install -y wipe
 }
+
 
 ###############################################################################
 # 1. утилиты
