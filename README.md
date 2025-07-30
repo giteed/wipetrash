@@ -1,4 +1,5 @@
-# ![WipeTrash Icon](https://github.com/giteed/wipetrash/blob/main/Burn_Folder_128x128_43380.png) WipeTrash - Полное руководство
+# ![WipeTrash Icon](https://github.com/giteed/wipetrash/blob/main/Burn_Folder_128x128_43380.png) 
+WipeTrash - Полное руководство
 
 ## Оглавление
 1. [Обзор](#обзор)
