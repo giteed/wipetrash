@@ -70,45 +70,40 @@ wipe_one() {
 }
 
 wipe_dir_contents() {
-  local dir="$1" removed=0
-  local files=()
+  local dir="$1"
+  local removed_files=0
+  local removed_dirs=0
   
-  # Сначала удаляем все файлы
+  # Удаление файлов
+  echo -e "${YELLOW}Удаление файлов в: $dir${NC}"
   while IFS= read -r -d $'\0' file; do
-    files+=("$file")
+    wipe_one "$file" && ((removed_files++))
   done < <(find "$dir" -type f -print0 2>/dev/null)
-  
-  local total=${#files[@]} i=0
-  for file in "${files[@]}"; do
-    ((i++))
-    printf "\r${YELLOW}%s${NC} %d/%d" "$dir" "$i" "$total" >&2
-    wipe_one "$file" && ((removed++))
-  done
-  ((total)) && echo >&2
-  
-  # Затем обрабатываем пустые папки
-  if (( removed > 0 )); then
-    echo -e "${YELLOW}Удаление пустых подпапок...${NC}"
-    while IFS= read -r -d $'\0' empty_subdir; do
-      if [[ "$empty_subdir" != "$dir" ]]; then
-        random_name="$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1)"
-        new_path="$(dirname "$empty_subdir")/$random_name"
-        mv "$empty_subdir" "$new_path" && rm -rf "$new_path" && ((removed++))
+
+  # Удаление пустых подпапок (кроме корневой)
+  echo -e "${YELLOW}Поиск пустых подпапок в: $dir${NC}"
+  while IFS= read -r -d $'\0' subdir; do
+    if [[ "$subdir" != "$dir" ]]; then
+      random_name="deleted_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1)"
+      new_path="$(dirname "$subdir")/$random_name"
+      
+      echo -e "Обработка: $subdir"
+      if mv "$subdir" "$new_path" 2>/dev/null; then
+        if rm -rf "$new_path" 2>/dev/null; then
+          echo -e "${GREEN}Удалено: $subdir${NC}"
+          ((removed_dirs++))
+        else
+          echo -e "${RED}Ошибка удаления: $new_path${NC}"
+        fi
+      else
+        echo -e "${RED}Ошибка переименования: $subdir${NC}"
       fi
-    done < <(find "$dir" -type d -empty -print0 2>/dev/null)
-  fi
-  
-  echo "$removed"
-}
-load_lists() {
-  MAP_FILES=()
-  for cfg in "$CONF_AUTO" "$CONF_MANUAL"; do
-    [[ -r "$cfg" ]] || continue
-    while IFS='|' read -r path _; do
-      [[ -z "$path" || "$path" == \#* ]] && continue
-      MAP_FILES+=("$path")
-    done <"$cfg"
-  done
+    fi
+  done < <(find "$dir" -type d -empty -print0 2>/dev/null | sort -rz)
+
+  # Возвращаем общее количество удаленных объектов
+  echo -e "${GREEN}Удалено файлов: $removed_files, папок: $removed_dirs${NC}"
+  echo $((removed_files + removed_dirs))
 }
 
 run_clean() {
@@ -122,30 +117,25 @@ run_clean() {
       log "⚠️  deny: $path"
       continue
     fi
-    echo -e "${GREEN}--- $path ---${NC}"
+    
+    echo -e "\n${GREEN}--- $path ---${NC}"
     if [[ -f "$path" || -L "$path" ]]; then
       wipe_one "$path" && ((removed++))
     elif [[ -d "$path" ]]; then
       before=$(find "$path" -type f | wc -l)
-      echo "до: $before"
+      echo "Файлов до: $before"
       n=$(wipe_dir_contents "$path")
       ((removed += n))
       after=$(find "$path" -type f | wc -l)
-      echo "после: $after"
+      echo "Файлов после: $after"
     else
       err "не найдено: $path"
     fi
   done
-  log "Всего удалено: $removed"
-  echo "$logfile"
 
-  echo -e "\n${YELLOW}Очистка пустых папок...${NC}"
-  "$SCRIPT_DIR/clean_empty_dirs.sh"
-  
-  log "Всего удалено: $removed"
+  log "Всего удалено объектов: $removed"
   echo "$logfile"
 }
-
 repair_trash_dirs() {
   load_lists
   local fixed=0
