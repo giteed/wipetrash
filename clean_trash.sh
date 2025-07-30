@@ -33,37 +33,42 @@ wipe_dir_contents() {
   local removed_files=0
   local removed_dirs=0
   
-  # Удаление файлов (без вывода в арифметический контекст)
-  echo -e "${YELLOW}Удаление файлов в: $dir${NC}" >&2
-  while IFS= read -r -d $'\0' file; do
-    if wipe_one "$file"; then
-      removed_files=$((removed_files + 1))
-    fi
-  done < <(find "$dir" -type f -print0 2>/dev/null)
+  # Удаление файлов с прогресс-баром
+  local files=()
+  mapfile -t files < <(find "$dir" -type f -print0 2>/dev/null | xargs -0)
+  local total_files=${#files[@]}
+  
+  echo -e "${YELLOW}Удаление файлов (0/$total_files)...${NC}" >&2
+  for ((i=0; i<total_files; i++)); do
+    printf "\r${YELLOW}Удаление файлов (%d/%d)...${NC}" "$((i+1))" "$total_files" >&2
+    wipe_one "${files[i]}" && removed_files=$((removed_files + 1))
+  done
+  ((total_files > 0)) && echo >&2
 
-  # Удаление пустых подпапок
-  echo -e "${YELLOW}Поиск пустых подпапок в: $dir${NC}" >&2
-  while IFS= read -r -d $'\0' subdir; do
-    if [[ "$subdir" != "$dir" ]]; then
-      random_name="del_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1)"
-      new_path="$(dirname "$subdir")/$random_name"
-      
-      if mv "$subdir" "$new_path" 2>/dev/null; then
-        if rm -rf "$new_path" 2>/dev/null; then
-          echo -e "${GREEN}Удалено: $subdir${NC}" >&2
-          removed_dirs=$((removed_dirs + 1))
-        else
-          echo -e "${RED}Ошибка удаления: $new_path${NC}" >&2
-        fi
-      else
-        echo -e "${RED}Ошибка переименования: $subdir${NC}" >&2
-      fi
+  # Удаление пустых папок с прогресс-баром
+  local empty_dirs=()
+  mapfile -t empty_dirs < <(find "$dir" -type d -empty -print0 2>/dev/null | xargs -0)
+  local total_dirs=${#empty_dirs[@]}
+  
+  echo -e "${YELLOW}Удаление пустых папок (0/$total_dirs)...${NC}" >&2
+  for ((i=0; i<total_dirs; i++)); do
+    subdir="${empty_dirs[i]}"
+    [[ "$subdir" == "$dir" ]] && continue
+    
+    printf "\r${YELLOW}Удаление пустых папок (%d/%d)...${NC}" "$((i+1))" "$total_dirs" >&2
+    random_name="del_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 12 | head -n 1)"
+    new_path="$(dirname "$subdir")/$random_name"
+    
+    if mv "$subdir" "$new_path" 2>/dev/null && rm -rf "$new_path" 2>/dev/null; then
+      removed_dirs=$((removed_dirs + 1))
     fi
-  done < <(find "$dir" -type d -empty -print0 2>/dev/null | sort -rz)
+  done
+  ((total_dirs > 0)) && echo >&2
 
-  echo -e "${GREEN}Удалено файлов: $removed_files, папок: $removed_dirs${NC}" >&2
+  echo -e "${GREEN}Удалено: $removed_files файлов, $removed_dirs папок${NC}" >&2
   echo $((removed_files + removed_dirs))
 }
+
 
 run_clean() {
   logfile="$REPORT_DIR/report_$(date '+%F-%H-%M-%S').log"
