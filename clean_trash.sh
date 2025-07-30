@@ -1,139 +1,120 @@
 #!/usr/bin/env bash
-# clean_trash – движок (wipe + rm-fallback по запросу)
-# 5.4.3 — 31 Jul 2025
+# wipe_trash – меню
+# 3.2.6 — 31 Jul 2025
 
 set -euo pipefail
 IFS=$'\n\t'
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BLUE='\033[0;34m'; NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONF_AUTO="$SCRIPT_DIR/trash_auto.conf"
-CONF_MANUAL="$SCRIPT_DIR/trash_manual.conf"
-CONF_DENY="$SCRIPT_DIR/trash_deny.conf"
+SETUP_MSG="$("$SCRIPT_DIR/setup_wt.sh")"
+source "$SCRIPT_DIR/clean_trash.sh"
+
+ADD_SCRIPT="$SCRIPT_DIR/add_safe_dir.sh"
 REPORT_DIR="$SCRIPT_DIR/reports"
-mkdir -p "$REPORT_DIR"
 
-WIPE_PASSES="${WIPE_PASSES:-1}"
-USE_RM_FALLBACK="${USE_RM_FALLBACK:-0}"
-
-# ── Проверка наличия wipe ────────────────────────────────────────────────
-ensure_wipe() {
-  if ! command -v wipe &>/dev/null; then
-    echo -e "${RED}✖ Ошибка: «wipe» не установлен.${NC}" >&2
-    if command -v apt-get &>/dev/null; then
-      read -rp "Установить «wipe» через apt-get? [Y/n] " ans
-      [[ ${ans:-Y} =~ ^[Nn]$ ]] && exit 1
-      sudo apt-get update && sudo apt-get install -y wipe || exit 1
-    else
-      echo -e "${RED}Установите «wipe» вручную!${NC}" >&2
-      exit 1
-    fi
-  fi
-  echo -e "${GREEN}✓ wipe: $(command -v wipe)${NC}"
+clean_history() {
+  rm -f ~/.local/share/recently-used.xbel 2>/dev/null || true
+  echo -e "${GREEN}История очищена.${NC}"
 }
 
-# ── Утилиты ──────────────────────────────────────────────────────────────
-deny_match() {
-  [[ -f "$CONF_DENY" && $(grep -Fx -- "$1" "$CONF_DENY") ]] || 
-  [[ "$1" == / || "$1" == /home || "$1" == /root ]]
-}
-
-log() { echo -e "$*" >>"$logfile"; }
-err() { echo -e "✖ $*" >>"$logfile"; }
-
-ask_fallback() {
-  (( USE_RM_FALLBACK )) && return 0
-  read -rp $'\n'"wipe не смог удалить файл. Включить запасной rm? [y/N] " a
-  [[ ${a,,} == y ]] && { USE_RM_FALLBACK=1; export USE_RM_FALLBACK; }
-}
-
-wipe_one() {
-  local file="$1"
-  if wipe -f -q -Q "$WIPE_PASSES" -- "$file" >>"$logfile" 2>&1; then
-    log "wipe файл: $file"
-    return 0
-  else
-    err "wipe-error: $file"
-    ask_fallback
-    if (( USE_RM_FALLBACK )); then
-      rm -f -- "$file" 2>>"$logfile" && log "rm файл: $file" || err "rm-error: $file"
-    fi
-    return 1
-  fi
-}
-
-wipe_dir_contents() {
-  local dir="$1" removed=0
-  mapfile -t files < <(find "$dir" -type f -print0 2>/dev/null | xargs -0)
-  local total=${#files[@]} i=0
-  for file in "${files[@]}"; do
-    ((i++))
-    printf "\r${YELLOW}%s${NC} %d/%d" "$dir" "$i" "$total" >&2
-    wipe_one "$file" && ((removed++))
-  done
-  ((total)) && echo >&2
-  echo "$removed"
-}
-
-load_lists() {
-  MAP_FILES=()
-  for cfg in "$CONF_AUTO" "$CONF_MANUAL"; do
-    [[ -r "$cfg" ]] || continue
-    while IFS='|' read -r path _; do
-      [[ -z "$path" || "$path" == \#* ]] && continue
-      MAP_FILES+=("$path")
-    done <"$cfg"
-  done
-}
-
-# ── Основная очистка ────────────────────────────────────────────────────
-run_clean() {
-  logfile="$REPORT_DIR/report_$(date '+%F-%H-%M-%S').log"
-  : >"$logfile"
-  load_lists
-  local removed=0
-
+show_menu() {
+  clear
+  echo -e "${BLUE}===========  W I P E   T R A S H  ===========${NC}"
+  echo    "============================================  v3.2.6"
+  echo -e "$SETUP_MSG\n"
+  echo -e "  ${RED}1${NC}) Очистить ${CYAN}ВСЁ${NC} (корзины + history)\n"
+  local n=2
   for path in "${MAP_FILES[@]}"; do
-    if deny_match "$path"; then
-      log "⚠️  deny: $path"
-      continue
-    fi
-    echo -e "${GREEN}--- $path ---${NC}"
-    if [[ -f "$path" || -L "$path" ]]; then
-      wipe_one "$path" && ((removed++))
-    elif [[ -d "$path" ]]; then
-      before=$(find "$path" -type f | wc -l)
-      echo "до: $before"
-      n=$(wipe_dir_contents "$path")
-      ((removed += n))
-      after=$(find "$path" -type f | wc -l)
-      echo "после: $after"
-    else
-      err "не найдено: $path"
-    fi
+    printf "  ${CYAN}%d${NC}) Очистить: ${YELLOW}%s${NC}\n" "$n" "$path"
+    ((n++))
   done
-  log "Всего удалено: $removed"
-  echo "$logfile"
+  printf "\n  ${CYAN}%d${NC}) Только history «Недавние файлы»\n" "$n"
+  echo -e "  a) Добавить каталоги/файлы\n  v) Просмотреть отчёты\n  r) Проверить/починить структуру\n  h) Help\n  q) Quit"
 }
 
-# ── Починка структуры корзин ────────────────────────────────────────────
-repair_trash_dirs() {
-  load_lists
-  local fixed=0
-  for path in "${MAP_FILES[@]}"; do
-    [[ "$path" != */Trash/files ]] && continue
-    info_dir="${path%/files}/info"
-    for dir in "$path" "$info_dir"; do
-      if [[ ! -d "$dir" ]]; then
-        mkdir -p -- "$dir" && chmod 700 -- "$dir"
-        echo "Создано: $dir"
-        ((fixed++))
-      fi
-    done
+view_reports() {
+  if ! ls -1 "$REPORT_DIR"/*.log &>/dev/null; then
+    echo "Нет отчётов."
+    read -rp "Нажмите Enter для продолжения..."
+    return
+  fi
+  select report in "$REPORT_DIR"/*.log; do
+    [[ -z "$report" ]] && break
+    less "$report"
+    read -rp "Удалить отчёт? [y/N] " answer
+    [[ ${answer,,} == y ]] && rm -f "$report"
+    break
   done
-  ((fixed)) && echo "Исправлено: $fixed" || echo "Все корзины целы."
 }
 
-# Инициализация
-ensure_wipe
+show_help() {
+  less <<EOF
+1 — очистить всё
+a — добавить пути
+v — просмотреть отчёты
+r — починка структуры
+q — выход
+EOF
+}
+
+main() {
+  load_lists || { echo -e "${RED}Ошибка загрузки конфигов!${NC}"; exit 1; }
+
+  while true; do
+    show_menu
+    read -rp $'\n'"Выберите действие [Enter = 1]: " choice
+    choice=${choice:-1}
+
+    case "$choice" in
+      1)
+        log_file=$(run_clean)
+        clean_history
+        echo -e "\nОтчёт: $log_file"
+        read -rp "Нажмите Enter для продолжения..."
+        ;;
+      a|A)
+        "$ADD_SCRIPT"
+        load_lists || true
+        ;;
+      v|V)
+        view_reports
+        ;;
+      r|R)
+        repair_trash_dirs
+        read -rp "Нажмите Enter для продолжения..."
+        ;;
+      h|H)
+        show_help
+        ;;
+      q|Q)
+        exit 0
+        ;;
+      *[!0-9]*)
+        echo "Неверный ввод!"
+        read -rp "Нажмите Enter для продолжения..."
+        ;;
+      *)
+        local idx=$((choice - 2))
+        if (( idx >= 0 && idx < ${#MAP_FILES[@]} )); then
+          local target="${MAP_FILES[idx]}"
+          echo -e "${YELLOW}Очистка: $target${NC}"
+          MAP_FILES=("$target")
+          log_file=$(run_clean)
+          load_lists || true
+          echo -e "\nОтчёт: $log_file"
+          read -rp "Нажмите Enter для продолжения..."
+        elif (( choice == (${#MAP_FILES[@]} + 2) )); then
+          clean_history
+          read -rp "Нажмите Enter для продолжения..."
+        else
+          echo "Неверный пункт!"
+          read -rp "Нажмите Enter для продолжения..."
+        fi
+        ;;
+    esac
+  done
+}
+
+main
