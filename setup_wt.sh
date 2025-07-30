@@ -1,27 +1,35 @@
 #!/usr/bin/env bash
-# setup_wt.sh – авто‑конфигурирование wipe_trash
+# setup_wt.sh – авто‑настройка wipe_trash
 # 1.4.0 — 29 Jul 2025
 
-# ── 0. Общие переменные ────────────────────────────────────────────────────
-TARGET_USER=${SUDO_USER:-$USER}
+# ── 0. Переменные ──────────────────────────────────────────────────────────
+TARGET_USER=${SUDO_USER:-$USER}                  # если запускают sudo, всё равно берём реального юзера
 HOME_DIR=$(eval echo "~$TARGET_USER")
 UID_=$(id -u "$TARGET_USER")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONF="$SCRIPT_DIR/trash_locations.conf"
+CONF_AUTO="$SCRIPT_DIR/trash_auto.conf"          # генерируется автоматически
+CONF_MANUAL="$SCRIPT_DIR/trash_manual.conf"      # ручные пути (add_safe_dir.sh)
+CONF_DENY="$SCRIPT_DIR/trash_deny.conf"          # «запрещённые» каталоги
+
 DESKTOP="$HOME/.local/share/applications/wipe_trash.desktop"
 ENGINE="$(realpath "$SCRIPT_DIR/wipe_trash.sh")"
 SRC_ICON="$(realpath "$SCRIPT_DIR/Burn_Folder_128x128_43380.png")"
 DEST_ICON="$HOME/.local/share/icons/wipe_trash.png"
 
-# ── 1. Сканируем корзины ───────────────────────────────────────────────────
-declare -A SEEN; LINES=()
+# ── 1. Собираем корзины ────────────────────────────────────────────────────
+declare -A SEEN
+LINES=()
 
-add() { local f=$1 i=$2; [[ ${SEEN[$f]+1} ]] && return; SEEN[$f]=1; LINES+=("$f|$f|$i"); }
+add() { local files=$1 info=$2
+        [[ ${SEEN[$files]+1} ]] && return
+        SEEN[$files]=1
+        LINES+=("$files|$files|$info")
+      }
 
-h_f="$HOME_DIR/.local/share/Trash/files"
-h_i="$HOME_DIR/.local/share/Trash/info"
-[[ -d $h_f && -d $h_i ]] && add "$h_f" "$h_i"
+home_files="$HOME_DIR/.local/share/Trash/files"
+home_info="$HOME_DIR/.local/share/Trash/info"
+[[ -d $home_files && -d $home_info ]] && add "$home_files" "$home_info"
 
 for base in /media /mnt /run/media; do
   [[ -d $base ]] || continue
@@ -31,19 +39,23 @@ for base in /media /mnt /run/media; do
   done < <(find "$base" -mindepth 1 -maxdepth 2 -type d -print0 2>/dev/null)
 done
 
+# ── 2. Пишем trash_auto.conf ───────────────────────────────────────────────
 {
   echo "# generated $(date '+%F %T')"
   for l in "${LINES[@]}"; do echo "$l"; done
-} >"$CONF"
-echo "✓ Конфиг корзин: $CONF  (найдено: ${#LINES[@]})"
+} >"$CONF_AUTO"
+echo "✓ Конфиг корзин: $CONF_AUTO  (найдено: ${#LINES[@]})"
 
-# ── 2. Проверка структуры (только сообщения) ───────────────────────────────
+# ── 3. Создаём пустые файлы, если их ещё нет ───────────────────────────────
+touch "$CONF_MANUAL" "$CONF_DENY"
+
+# ── 4. Проверка структуры корзин (только сообщение) ────────────────────────
 for l in "${LINES[@]}"; do
   IFS='|' read -r _ f i <<<"$l"
   [[ -d $f && -d $i ]] || echo "⚠️  Повреждена структура: $f"
 done
 
-# ── 3. Готовим иконку ───────────────────────────────────────────────────────
+# ── 5. Иконка ──────────────────────────────────────────────────────────────
 if [[ $SRC_ICON == *" "* ]]; then
   mkdir -p "$(dirname "$DEST_ICON")"
   cp -f -- "$SRC_ICON" "$DEST_ICON"
@@ -52,7 +64,7 @@ else
   ICON_FIELD="Icon=$SRC_ICON"
 fi
 
-# ── 4. .desktop‑файл ───────────────────────────────────────────────────────
+# ── 6. Ярлык (.desktop) ────────────────────────────────────────────────────
 make_desktop() {
 cat >"$DESKTOP"<<EOF
 [Desktop Entry]
@@ -76,5 +88,5 @@ else
   echo "✓ Создан ярлык: $DESKTOP"
 fi
 
-# ── 5. Делаем все *.sh исполняемыми ────────────────────────────────────────
+# ── 7. Делаем все *.sh исполняемыми ────────────────────────────────────────
 chmod +x "$SCRIPT_DIR"/*.sh
