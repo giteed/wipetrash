@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
-# clean_trash – движок (wipe + рекурсивная очистка + отчёт, без rm)
-# 5.3.2 — 30 Jul 2025
+# clean_trash – движок (wipe + fallback rm по запросу)
+# 5.4.0 — 30 Jul 2025
 
 set -euo pipefail
 IFS=$'\n\t'
 
+# ── цвета ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
+# ── переменные ─────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF_AUTO="$SCRIPT_DIR/trash_auto.conf"
 CONF_MANUAL="$SCRIPT_DIR/trash_manual.conf"
 CONF_DENY="$SCRIPT_DIR/trash_deny.conf"
 REPORT_DIR="$SCRIPT_DIR/reports"; mkdir -p "$REPORT_DIR"
 
-WIPE_PASSES="${WIPE_PASSES:-1}"     # сколько проходов (1 по‑умолчанию)
-WIPE_SILENT="${WIPE_SILENT:-0}"     # 1 → wipe -q
+WIPE_PASSES="${WIPE_PASSES:-1}"      # проходов wipe
+WIPE_SILENT="${WIPE_SILENT:-0}"      # 1 → wipe -q
+USE_RM_FALLBACK="${USE_RM_FALLBACK:-0}"  # 1 → rm, если wipe не смог
 
 ###############################################################################
 # 0. проверяем wipe
 ###############################################################################
 ensure_wipe() {
-  if command -v wipe &>/dev/null; then
-      echo -e "${GREEN}✓ wipe: $(command -v wipe)${NC}"
+  local w
+  if w=$(command -v wipe); then
+      echo -e "${GREEN}✓ wipe: $w${NC}"
       return
   fi
   echo -e "${YELLOW}«wipe» не найден.${NC}"
@@ -41,18 +45,34 @@ deny_match(){ [[ -f $CONF_DENY && $(grep -Fx "$1" "$CONF_DENY") ]] || [[ $1 == /
 
 logfile=""; log(){ echo -e "$*" >>"$logfile"; }; err(){ echo -e "✖ $*" >>"$logfile"; }
 
-wipe_one() {                       # $1 = файл
-  local opts=( -f -Q "$WIPE_PASSES" ); (( WIPE_SILENT )) && opts+=( -q )
-  wipe "${opts[@]}" -- "$1" 2>>"$logfile" \
-       && log "wipe файл: $1" \
-       || err "wipe‑error: $1"
+maybe_enable_rm(){
+  if (( USE_RM_FALLBACK )); then return; fi
+  read -rp $'\n'"wipe не смог удалить файл. Разрешить запасной rm? [y/N] " a
+  if [[ ${a,,} == y ]]; then
+      USE_RM_FALLBACK=1
+      export USE_RM_FALLBACK      # сохранится на весь скрипт
+      echo -e "${YELLOW}rm‑fallback включён.${NC}"
+  fi
 }
 
-wipe_dir_contents(){               # stdout → кол‑во удалённых, stderr → progress
+wipe_one(){                       # $1 = файл
+  local opts=( -f -Q "$WIPE_PASSES" ); (( WIPE_SILENT )) && opts+=( -q )
+  if wipe "${opts[@]}" -- "$1" 2>>"$logfile"; then
+      log "wipe файл: $1"
+  else
+      err "wipe‑error: $1"
+      maybe_enable_rm
+      if (( USE_RM_FALLBACK )); then
+          rm -f -- "$1" 2>>"$logfile" && log "rm файл: $1" || err "rm‑error: $1"
+      fi
+  fi
+}
+
+wipe_dir_contents(){              # stdout → кол‑во удалённых, stderr → progress
   local d=$1 removed=0
-  mapfile -d '' items < <(find "$d" -type f -print0 2>/dev/null || true)
-  local total=${#items[@]} i=0
-  for f in "${items[@]}"; do
+  mapfile -d '' files < <(find "$d" -type f -print0 2>/dev/null || true)
+  local total=${#files[@]} i=0
+  for f in "${files[@]}"; do
     ((i++)); printf "\r${YELLOW}%s${NC} %d/%d" "$d" "$i" "$total" >&2
     wipe_one "$f" && ((removed++))
   done
