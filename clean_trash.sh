@@ -1,23 +1,30 @@
 #!/usr/bin/env bash
 # clean_trash – движок (wipe + rm-fallback по запросу)
-# 5.4.3 — 31 Jul 2025
+# 5.4.4 — 31 Jul 2025
 
 set -euo pipefail
 IFS=$'\n\t'
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF_AUTO="$SCRIPT_DIR/trash_auto.conf"
 CONF_MANUAL="$SCRIPT_DIR/trash_manual.conf"
 CONF_DENY="$SCRIPT_DIR/trash_deny.conf"
 REPORT_DIR="$SCRIPT_DIR/reports"
-mkdir -p "$REPORT_DIR"
+
+# Создаем директорию для отчетов с проверкой
+mkdir -p "$REPORT_DIR" || {
+  echo -e "${RED}Ошибка: не удалось создать $REPORT_DIR${NC}" >&2
+  exit 1
+}
 
 WIPE_PASSES="${WIPE_PASSES:-1}"
 USE_RM_FALLBACK="${USE_RM_FALLBACK:-0}"
 
-# ── Проверка наличия wipe ────────────────────────────────────────────────
 ensure_wipe() {
   if ! command -v wipe &>/dev/null; then
     echo -e "${RED}✖ Ошибка: «wipe» не установлен.${NC}" >&2
@@ -33,9 +40,8 @@ ensure_wipe() {
   echo -e "${GREEN}✓ wipe: $(command -v wipe)${NC}"
 }
 
-# ── Утилиты ──────────────────────────────────────────────────────────────
 deny_match() {
-  [[ -f "$CONF_DENY" && $(grep -Fx -- "$1" "$CONF_DENY") ]] || 
+  [[ -f "$CONF_DENY" ]] && grep -Fxq -- "$1" "$CONF_DENY" || 
   [[ "$1" == / || "$1" == /home || "$1" == /root ]]
 }
 
@@ -65,7 +71,11 @@ wipe_one() {
 
 wipe_dir_contents() {
   local dir="$1" removed=0
-  mapfile -t files < <(find "$dir" -type f -print0 2>/dev/null | xargs -0)
+  local files=()
+  while IFS= read -r -d $'\0' file; do
+    files+=("$file")
+  done < <(find "$dir" -type f -print0 2>/dev/null)
+  
   local total=${#files[@]} i=0
   for file in "${files[@]}"; do
     ((i++))
@@ -87,7 +97,6 @@ load_lists() {
   done
 }
 
-# ── Основная очистка ────────────────────────────────────────────────────
 run_clean() {
   logfile="$REPORT_DIR/report_$(date '+%F-%H-%M-%S').log"
   : >"$logfile"
@@ -117,7 +126,6 @@ run_clean() {
   echo "$logfile"
 }
 
-# ── Починка структуры корзин ────────────────────────────────────────────
 repair_trash_dirs() {
   load_lists
   local fixed=0
@@ -135,7 +143,7 @@ repair_trash_dirs() {
   ((fixed)) && echo "Исправлено: $fixed" || echo "Все корзины целы."
 }
 
-# Инициализация (только если скрипт запущен напрямую)
+# Инициализация только при прямом запуске
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   ensure_wipe
 fi
