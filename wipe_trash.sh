@@ -1,28 +1,11 @@
 #!/usr/bin/env bash
-# wipe_trash – меню
-# 3.2.7 — 31 Jul 2025
+# wipe_trash.sh - главное меню
+# 3.2.8 - 31 Jul 2025
 
-set -euo pipefail
-IFS=$'\n\t'
-
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SETUP_MSG="$("$SCRIPT_DIR/setup_wt.sh")"
-
-# Безопасная загрузка функций
-source "$SCRIPT_DIR/clean_trash.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/wipe_functions.sh"
 
 ADD_SCRIPT="$SCRIPT_DIR/add_safe_dir.sh"
-REPORT_DIR="$SCRIPT_DIR/reports"
-mkdir -p "$REPORT_DIR" || {
-  echo -e "${RED}Ошибка создания $REPORT_DIR${NC}" >&2
-  exit 1
-}
+SETUP_MSG="$("$SCRIPT_DIR/setup_wt.sh")"
 
 clean_history() {
   rm -f ~/.local/share/recently-used.xbel 2>/dev/null || true
@@ -32,7 +15,7 @@ clean_history() {
 show_menu() {
   clear
   echo -e "${BLUE}===========  W I P E   T R A S H  ===========${NC}"
-  echo    "============================================  v3.2.7"
+  echo    "============================================  v3.2.8"
   echo -e "$SETUP_MSG\n"
   echo -e "  ${RED}1${NC}) Очистить ${CYAN}ВСЁ${NC} (корзины + history)\n"
   local n=2
@@ -70,6 +53,7 @@ EOF
 }
 
 main() {
+  init_dirs
   ensure_wipe
   load_lists || {
     echo -e "${RED}Ошибка загрузки конфигов!${NC}" >&2
@@ -131,4 +115,6 @@ main() {
   done
 }
 
-main
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main
+fi
