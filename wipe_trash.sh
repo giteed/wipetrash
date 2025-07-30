@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wipe_trash.sh - главное меню
-# 3.2.8 - 31 Jul 2025
+# 3.2.9 - 31 Jul 2025
 
 source "$(dirname "${BASH_SOURCE[0]}")/wipe_functions.sh"
 
@@ -15,7 +15,7 @@ clean_history() {
 show_menu() {
   clear
   echo -e "${BLUE}===========  W I P E   T R A S H  ===========${NC}"
-  echo    "============================================  v3.2.8"
+  echo    "============================================  v3.2.9"
   echo -e "$SETUP_MSG\n"
   echo -e "  ${RED}1${NC}) Очистить ${CYAN}ВСЁ${NC} (корзины + history)\n"
   local n=2
@@ -52,21 +52,11 @@ q — выход
 EOF
 }
 
-
 run_clean() {
-  if [[ ! -f "$SCRIPT_DIR/clean_trash.sh" ]]; then
-    echo -e "${RED}Ошибка: clean_trash.sh не найден${NC}" >&2
-    return 1
-  fi
-  log_file=$("$SCRIPT_DIR/clean_trash.sh")
-  echo "$log_file"
+  # Очистка с выводом прогресса
+  log_file=$("$SCRIPT_DIR/clean_trash.sh" "$@")
+  echo -e "\nОтчёт: $log_file"
 }
-
-repair_trash_dirs() {
-  # Делегируем починку основному скрипту
-  "$SCRIPT_DIR/clean_trash.sh" --repair
-}
-
 
 main() {
   init_dirs
@@ -83,9 +73,8 @@ main() {
 
     case "$choice" in
       1)
-        log_file=$(run_clean)
+        run_clean
         clean_history
-        echo -e "\nОтчёт: $log_file"
         read -rp "Нажмите Enter для продолжения..."
         ;;
       a|A)
@@ -101,6 +90,7 @@ main() {
         ;;
       h|H)
         show_help
+        read -rp "Нажмите Enter для продолжения..."
         ;;
       q|Q)
         exit 0
@@ -114,17 +104,19 @@ main() {
         if (( idx >= 0 && idx < ${#MAP_FILES[@]} )); then
           local target="${MAP_FILES[idx]}"
           echo -e "${YELLOW}Очистка только: $target${NC}"
-          log_file=$("$SCRIPT_DIR/clean_trash.sh" "$target")
-          echo -e "\nОтчёт: $log_file"
+          run_clean "$target"
           read -rp "Нажмите Enter для продолжения..."
         elif (( choice == (${#MAP_FILES[@]} + 2) )); then
-          # Добавьте код для обработки этого случая
+          clean_history
+          read -rp "Нажмите Enter для продолжения..."
+        else
+          echo "Неверный пункт!"
+          read -rp "Нажмите Enter для продолжения..."
         fi
         ;;
     esac
   done
 }
-
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   main
