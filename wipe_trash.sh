@@ -123,6 +123,7 @@ main() {
   elif (( choice == (${#MAP_FILES[@]} + 2) )); then
   
   esac
+  ;;
   done
 }
 
