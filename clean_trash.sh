@@ -1,83 +1,139 @@
 #!/usr/bin/env bash
-# clean_trash – движок (wipe + rm‑fallback по запросу)
-# 5.5.0 — 30 Jul 2025
+# clean_trash – движок (wipe + rm-fallback по запросу)
+# 5.4.3 — 31 Jul 2025
 
 set -euo pipefail
 IFS=$'\n\t'
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF_AUTO="$SCRIPT_DIR/trash_auto.conf"
 CONF_MANUAL="$SCRIPT_DIR/trash_manual.conf"
 CONF_DENY="$SCRIPT_DIR/trash_deny.conf"
-REPORT_DIR="$SCRIPT_DIR/reports"; mkdir -p "$REPORT_DIR"
+REPORT_DIR="$SCRIPT_DIR/reports"
+mkdir -p "$REPORT_DIR"
 
 WIPE_PASSES="${WIPE_PASSES:-1}"
 USE_RM_FALLBACK="${USE_RM_FALLBACK:-0}"
 
-###############################################################################
-# 0. проверяем wipe (вызывается один раз в конце файла)
-###############################################################################
+# ── Проверка наличия wipe ────────────────────────────────────────────────
 ensure_wipe() {
-  local w
-  if w=$(command -v wipe); then
-      echo -e "${GREEN}✓ wipe: $w${NC}"
-      (( USE_RM_FALLBACK )) && echo -e "${YELLOW}rm‑fallback = ON${NC}"
-      return
-  fi
-  echo -e "${YELLOW}«wipe» не найден.${NC}"
-  if ! command -v apt-get &>/dev/null; then
-      echo -e "${RED}apt‑get недоступен. Установите «wipe» вручную!${NC}"
+  if ! command -v wipe &>/dev/null; then
+    echo -e "${RED}✖ Ошибка: «wipe» не установлен.${NC}" >&2
+    if command -v apt-get &>/dev/null; then
+      read -rp "Установить «wipe» через apt-get? [Y/n] " ans
+      [[ ${ans:-Y} =~ ^[Nn]$ ]] && exit 1
+      sudo apt-get update && sudo apt-get install -y wipe || exit 1
+    else
+      echo -e "${RED}Установите «wipe» вручную!${NC}" >&2
       exit 1
+    fi
   fi
-  read -rp "Установить «wipe» через apt‑get? [Y/n] " ans
-  [[ ${ans:-Y} =~ ^[Nn]$ ]] && { echo "Отмена."; exit 1; }
-  sudo apt-get update && sudo apt-get install -y wipe
+  echo -e "${GREEN}✓ wipe: $(command -v wipe)${NC}"
 }
 
-###############################################################################
-# остальные функции (без изменений 5.4.3)
-###############################################################################
-deny_match(){ [[ -f $CONF_DENY && $(grep -Fx "$1" "$CONF_DENY") ]] || [[ $1 == / || $1 == /home || $1 == /root ]]; }
+# ── Утилиты ──────────────────────────────────────────────────────────────
+deny_match() {
+  [[ -f "$CONF_DENY" && $(grep -Fx -- "$1" "$CONF_DENY") ]] || 
+  [[ "$1" == / || "$1" == /home || "$1" == /root ]]
+}
 
-logfile=""; log(){ echo -e "$*" >>"$logfile"; }; err(){ echo -e "✖ $*" >>"$logfile"; }
-ask_fallback(){ (( USE_RM_FALLBACK )) && return
-  read -rp $'\n'"wipe не смог удалить файл. Включить rm? [y/N] " a
-  [[ ${a,,} == y ]] && { USE_RM_FALLBACK=1; export USE_RM_FALLBACK; echo -e "${YELLOW}rm‑fallback включён.${NC}"; }; }
+log() { echo -e "$*" >>"$logfile"; }
+err() { echo -e "✖ $*" >>"$logfile"; }
 
-wipe_one(){ local opts=( -f -q -Q "$WIPE_PASSES" )
-  if wipe "${opts[@]}" -- "$1" >>"$logfile" 2>&1; then log "wipe файл: $1"
-  else err "wipe‑error: $1"; ask_fallback
-       (( USE_RM_FALLBACK )) && { rm -f -- "$1" 2>>"$logfile" && log "rm файл: $1" || err "rm‑error: $1"; }; fi; }
+ask_fallback() {
+  (( USE_RM_FALLBACK )) && return 0
+  read -rp $'\n'"wipe не смог удалить файл. Включить запасной rm? [y/N] " a
+  [[ ${a,,} == y ]] && { USE_RM_FALLBACK=1; export USE_RM_FALLBACK; }
+}
 
-wipe_dir_contents(){ local d=$1 removed=0
-  mapfile -d '' files < <(find "$d" -type f -print0 2>/dev/null || true)
+wipe_one() {
+  local file="$1"
+  if wipe -f -q -Q "$WIPE_PASSES" -- "$file" >>"$logfile" 2>&1; then
+    log "wipe файл: $file"
+    return 0
+  else
+    err "wipe-error: $file"
+    ask_fallback
+    if (( USE_RM_FALLBACK )); then
+      rm -f -- "$file" 2>>"$logfile" && log "rm файл: $file" || err "rm-error: $file"
+    fi
+    return 1
+  fi
+}
+
+wipe_dir_contents() {
+  local dir="$1" removed=0
+  mapfile -t files < <(find "$dir" -type f -print0 2>/dev/null | xargs -0)
   local total=${#files[@]} i=0
-  for f in "${files[@]}"; do ((i++)); printf "\r${YELLOW}%s${NC} %d/%d" "$d" "$i" "$total" >&2
-                               wipe_one "$f" && ((removed++)); done
-  ((total)) && echo >&2; echo "$removed"; }
+  for file in "${files[@]}"; do
+    ((i++))
+    printf "\r${YELLOW}%s${NC} %d/%d" "$dir" "$i" "$total" >&2
+    wipe_one "$file" && ((removed++))
+  done
+  ((total)) && echo >&2
+  echo "$removed"
+}
 
-load_lists(){ MAP_FILES=()
-  for cfg in "$CONF_AUTO" "$CONF_MANUAL"; do [[ -r $cfg ]] || { :> "$cfg"; }
-    while IFS='|' read -r p _; do [[ -z $p || $p == \#* ]] && continue; MAP_FILES+=("$p"); done <"$cfg"; done; return 0; }
+load_lists() {
+  MAP_FILES=()
+  for cfg in "$CONF_AUTO" "$CONF_MANUAL"; do
+    [[ -r "$cfg" ]] || continue
+    while IFS='|' read -r path _; do
+      [[ -z "$path" || "$path" == \#* ]] && continue
+      MAP_FILES+=("$path")
+    done <"$cfg"
+  done
+}
 
-run_clean(){ logfile="$REPORT_DIR/report_$(date '+%F-%H-%M-%S').log"; : >"$logfile"
-             [[ ${#MAP_FILES[@]} -eq 0 ]] && load_lists
-             local removed=0
-             for p in "${MAP_FILES[@]}"; do deny_match "$p" && { log "⚠️  deny: $p"; continue; }
-                 echo -e "${GREEN}--- $p ---${NC}"
-                 if [[ -f $p || -L $p ]]; then wipe_one "$p"; ((removed++))
-                 elif [[ -d $p ]]; then before=$(find "$p" -type f | wc -l); echo "до: $before"
-                     n=$(wipe_dir_contents "$p"); ((removed+=n))
-                     after=$(find "$p" -type f | wc -l); echo "после: $after"
-                 else err "не найдено: $p"; fi; done
-             log "Всего удалено: $removed"; echo "$logfile"; }
+# ── Основная очистка ────────────────────────────────────────────────────
+run_clean() {
+  logfile="$REPORT_DIR/report_$(date '+%F-%H-%M-%S').log"
+  : >"$logfile"
+  load_lists
+  local removed=0
 
-repair_trash_dirs(){ load_lists; local fixed=0
-  for p in "${MAP_FILES[@]}"; do [[ $p != */Trash/files ]] && continue
-    info="${p%/files}/info"
-    for d in "$p" "$info"; do [[ -d $d ]] || { mkdir -p -- "$d" && chmod 700 -- "$d"; echo "Создано: $d"; ((fixed++)); }; done; done
-  ((fixed)) && echo "Исправлено: $fixed" || echo "Все корзины целы."; }
+  for path in "${MAP_FILES[@]}"; do
+    if deny_match "$path"; then
+      log "⚠️  deny: $path"
+      continue
+    fi
+    echo -e "${GREEN}--- $path ---${NC}"
+    if [[ -f "$path" || -L "$path" ]]; then
+      wipe_one "$path" && ((removed++))
+    elif [[ -d "$path" ]]; then
+      before=$(find "$path" -type f | wc -l)
+      echo "до: $before"
+      n=$(wipe_dir_contents "$path")
+      ((removed += n))
+      after=$(find "$path" -type f | wc -l)
+      echo "после: $after"
+    else
+      err "не найдено: $path"
+    fi
+  done
+  log "Всего удалено: $removed"
+  echo "$logfile"
+}
 
-# ── вызов проверки wipe ────────────────────────────────────────────────────
+# ── Починка структуры корзин ────────────────────────────────────────────
+repair_trash_dirs() {
+  load_lists
+  local fixed=0
+  for path in "${MAP_FILES[@]}"; do
+    [[ "$path" != */Trash/files ]] && continue
+    info_dir="${path%/files}/info"
+    for dir in "$path" "$info_dir"; do
+      if [[ ! -d "$dir" ]]; then
+        mkdir -p -- "$dir" && chmod 700 -- "$dir"
+        echo "Создано: $dir"
+        ((fixed++))
+      fi
+    done
+  done
+  ((fixed)) && echo "Исправлено: $fixed" || echo "Все корзины целы."
+}
+
+# Инициализация
 ensure_wipe
