@@ -1,73 +1,96 @@
 #!/usr/bin/env bash
-# clean_trash.sh – движок очистки
-# Версия: 4.4.0 (29 Jul 2025)
+# clean_trash – движок
+# 5.0.0 — 29 Jul 2025
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then set -euo pipefail; fi
 IFS=$'\n\t'
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-trap 'tput cnorm; echo -e "\n${RED}Прервано!${NC}"; exit 1' INT TERM
+# ← цвета уже приведены выше
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONF_FILE="$SCRIPT_DIR/trash_locations.conf"
-SETUP="$SCRIPT_DIR/setup_wt.sh"
+CONF_AUTO="$SCRIPT_DIR/trash_auto.conf"
+CONF_MANUAL="$SCRIPT_DIR/trash_manual.conf"
+CONF_DENY="$SCRIPT_DIR/trash_deny.conf"
+REPORT_DIR="$SCRIPT_DIR/reports"
 
-###############################################################################
-install_utils() {
-    command -v wipe &>/dev/null && return
-    echo -e "${YELLOW}Устанавливаю «wipe»…${NC}"
-    if command -v apt-get &>/dev/null; then
-        sudo apt-get update && sudo apt-get install -y wipe
-    else
-        echo -e "${RED}Не могу установить «wipe».${NC}"; exit 1
-    fi
-}
+mkdir -p "$REPORT_DIR"
 
+# ---------- helpers ---------------------------------------------------------
 human() { local s=$1 u=(B K M G T); for x in "${u[@]}"; do ((s<1024))&&{ printf "%d%s" "$s" "$x"; return; }; s=$((s/1024)); done; printf "%dP" "$s"; }
 
-clean_with_progress() {
-    local dir=$1; mapfile -d '' items < <(find "$dir" ! -type d -print0 2>/dev/null)
-    local total=${#items[@]}; ((total==0)) && { echo -e "${GREEN}Пусто: $dir${NC}"; return; }
-    echo -e "${YELLOW}Очистка: $dir (${total})${NC}"; tput civis
-    local i f; for ((i=1;i<=total;i++)); do f="${items[i-1]}"
-        printf "\rУдаляем [%d/%d] %s" "$i" "$total" "$(basename "$f")"
-        [[ -f $f ]] && { wipe -f -q -Q 1 -- "$f" 2>/dev/null || rm -f -- "$f"; } \
-                     || rm -f -- "$f"
-    done; echo; tput cnorm
-    find "$dir" -type d -empty -delete 2>/dev/null
-    echo -e "${GREEN}Готово.${NC}"
+logfile=""          # будет установлен в run_clean()
+
+log()    { echo -e "$*"            | tee -a "$logfile"; }
+log_err(){ echo -e "${RED}$*${NC}" | tee -a "$logfile" >&2; }
+
+deny_match() {
+  local p=$1
+  grep -Fxq "$p" "$CONF_DENY" 2>/dev/null && return 0
+  # также блокируем «/» и «/home»/«/root» супера
+  [[ $p == / || $p == /home || $p == /root ]] && return 0
+  return 1
 }
 
-clean_trash() { [[ -d $1 ]] && clean_with_progress "$1"; [[ -d $2 ]] && clean_with_progress "$2"; }
-
-clean_history() {
-    echo -e "${YELLOW}Очистка history «Недавние файлы»…${NC}"
-    rm -vf ~/.local/share/recently-used.xbel 2>/dev/null || true
-    echo -e "${GREEN}История очищена.${NC}"
+wipe_file() {
+  local f=$1
+  if ! rm -f -- "$f" 2>>"$logfile"; then
+    log_err "  ✖ не удалось: $f"
+    return 1
+  fi
+  log "  ✓ файл: $f"
 }
 
-###############################################################################
-load_config() {
-    [[ -r $CONF_FILE ]] || "$SETUP" >/dev/null
-    LABELS=(); FILES_DIRS=(); INFO_DIRS=(); declare -A SEEN
-    while IFS='|' read -r _files files info; do
-        [[ $_files == \#* ]] && continue
-        [[ -n ${SEEN[$files]+1} ]] && continue
-        SEEN[$files]=1
-        LABELS+=("$files"); FILES_DIRS+=("$files"); INFO_DIRS+=("$info")
-    done <"$CONF_FILE"
-    (( ${#LABELS[@]} )) || { echo "❌ Корзины не найдены."; exit 1; }
+wipe_dir_contents() {
+  local d=$1; local n ok=0
+  mapfile -d '' items < <(find "$d" -mindepth 1 -print0 2>/dev/null)
+  for p in "${items[@]}"; do
+    if [[ -f $p || -L $p ]]; then
+      wipe_file "$p" && ((ok++))
+    else
+      rm -rf -- "$p" 2>>"$logfile" \
+        && log "  ✓ каталог: $p" \
+        || log_err "  ✖ не удалось: $p"
+    fi
+  done
+  echo "$ok"
 }
 
-###############################################################################
-auto_mode() {
-    [[ ${#LABELS[@]} -eq 0 ]] && load_config
-    echo -e "${GREEN}========  ПОЛНАЯ ОЧИСТКА  ========${NC}"
-    local i; for ((i=0;i<${#LABELS[@]};i++)); do
-        clean_trash "${FILES_DIRS[i]}" "${INFO_DIRS[i]}"
-    done
-    clean_history
-    echo -e "${GREEN}Завершено.${NC}"
+# ---------- загрузка конфигов ----------------------------------------------
+load_lists() {
+  MAP_FILES=()
+  for cfg in "$CONF_AUTO" "$CONF_MANUAL"; do
+    [[ -r $cfg ]] || continue
+    while IFS='|' read -r p _; do
+      [[ $p == \#* || -z $p ]] && continue
+      MAP_FILES+=("$p")
+    done <"$cfg"
+  done
 }
 
-[[ "${BASH_SOURCE[0]}" == "$0" ]] && { install_utils; load_config; auto_mode; }
+# ---------- основная функция очистки ---------------------------------------
+run_clean() {
+  local stamp=$(date '+%Y-%m-%d_%H-%M-%S')
+  logfile="$REPORT_DIR/report_$stamp.log"
+  touch "$logfile"
+
+  load_lists
+  local removed=0
+
+  for p in "${MAP_FILES[@]}"; do
+    if deny_match "$p"; then
+      log "  ⚠️  пропущено (deny): $p"
+      continue
+    fi
+
+    if [[ -f $p ]]; then
+      wipe_file "$p" && ((removed++))
+    elif [[ -d $p ]]; then
+      n=$(wipe_dir_contents "$p"); ((removed+=n))
+    else
+      log_err "  ⚠️  не найдено: $p"
+    fi
+  done
+
+  log "Всего удалено объектов: $removed"
+  echo "$logfile"
+}
