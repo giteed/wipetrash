@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # clean_trash.sh - основной движок очистки
-# 5.4.7 - 31 Jul 2025
+# 5.4.8 - 31 Jul 2025
 
 source "$(dirname "${BASH_SOURCE[0]}")/wipe_functions.sh"
 
@@ -31,11 +31,11 @@ wipe_dir_contents() {
   local removed_files=0
   local removed_dirs=0
   
-  # Удаление только файлов в указанной папке (без рекурсии)
+  # Рекурсивное удаление всех файлов
   local files=()
   while IFS= read -r -d $'\0' file; do
     files+=("$file")
-  done < <(find "$dir" -maxdepth 1 -type f -print0 2>/dev/null)
+  done < <(find "$dir" -type f -print0 2>/dev/null)
   
   local total_files=${#files[@]}
   
@@ -48,11 +48,11 @@ wipe_dir_contents() {
     echo >&2
   fi
 
-  # Удаление только пустых подпапок в указанной папке
+  # Удаление всех пустых папок (рекурсивно)
   local empty_dirs=()
   while IFS= read -r -d $'\0' subdir; do
     empty_dirs+=("$subdir")
-  done < <(find "$dir" -maxdepth 1 -type d -empty -print0 2>/dev/null)
+  done < <(find "$dir" -type d -empty -print0 2>/dev/null | sort -rz)
   
   local total_dirs=${#empty_dirs[@]}
   
@@ -115,6 +115,7 @@ run_clean() {
   log "Всего удалено объектов: $removed_total"
   echo "$logfile"
 }
+
 
 repair_trash_dirs() {
   load_lists || return 1
