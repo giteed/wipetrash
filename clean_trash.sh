@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# clean_trash – движок (wipe + fallback rm по запросу)
-# 5.4.0 — 30 Jul 2025
+# clean_trash – движок (wipe + прогресс + rm‑fallback по запросу)
+# 5.4.1 — 30 Jul 2025
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -15,9 +15,8 @@ CONF_MANUAL="$SCRIPT_DIR/trash_manual.conf"
 CONF_DENY="$SCRIPT_DIR/trash_deny.conf"
 REPORT_DIR="$SCRIPT_DIR/reports"; mkdir -p "$REPORT_DIR"
 
-WIPE_PASSES="${WIPE_PASSES:-1}"      # проходов wipe
-WIPE_SILENT="${WIPE_SILENT:-0}"      # 1 → wipe -q
-USE_RM_FALLBACK="${USE_RM_FALLBACK:-0}"  # 1 → rm, если wipe не смог
+WIPE_PASSES="${WIPE_PASSES:-1}"       # 1 — быстро; >1 — дольше
+USE_RM_FALLBACK="${USE_RM_FALLBACK:-0}"
 
 ###############################################################################
 # 0. проверяем wipe
@@ -26,6 +25,7 @@ ensure_wipe() {
   local w
   if w=$(command -v wipe); then
       echo -e "${GREEN}✓ wipe: $w${NC}"
+      (( USE_RM_FALLBACK )) && echo -e "${YELLOW}rm‑fallback = ON${NC}"
       return
   fi
   echo -e "${YELLOW}«wipe» не найден.${NC}"
@@ -45,30 +45,30 @@ deny_match(){ [[ -f $CONF_DENY && $(grep -Fx "$1" "$CONF_DENY") ]] || [[ $1 == /
 
 logfile=""; log(){ echo -e "$*" >>"$logfile"; }; err(){ echo -e "✖ $*" >>"$logfile"; }
 
-maybe_enable_rm(){
-  if (( USE_RM_FALLBACK )); then return; fi
-  read -rp $'\n'"wipe не смог удалить файл. Разрешить запасной rm? [y/N] " a
+ask_fallback(){
+  (( USE_RM_FALLBACK )) && return
+  read -rp $'\n'"wipe не смог удалить файл. Включить запасной rm? [y/N] " a
   if [[ ${a,,} == y ]]; then
       USE_RM_FALLBACK=1
-      export USE_RM_FALLBACK      # сохранится на весь скрипт
+      export USE_RM_FALLBACK
       echo -e "${YELLOW}rm‑fallback включён.${NC}"
   fi
 }
 
 wipe_one(){                       # $1 = файл
-  local opts=( -f -Q "$WIPE_PASSES" ); (( WIPE_SILENT )) && opts+=( -q )
-  if wipe "${opts[@]}" -- "$1" 2>>"$logfile"; then
+  local opts=( -f -q -Q "$WIPE_PASSES" )
+  if wipe "${opts[@]}" -- "$1" >>"$logfile" 2>&1; then
       log "wipe файл: $1"
   else
       err "wipe‑error: $1"
-      maybe_enable_rm
+      ask_fallback
       if (( USE_RM_FALLBACK )); then
           rm -f -- "$1" 2>>"$logfile" && log "rm файл: $1" || err "rm‑error: $1"
       fi
   fi
 }
 
-wipe_dir_contents(){              # stdout → кол‑во удалённых, stderr → progress
+wipe_dir_contents(){              # stdout → удалённых, stderr → progress
   local d=$1 removed=0
   mapfile -d '' files < <(find "$d" -type f -print0 2>/dev/null || true)
   local total=${#files[@]} i=0
