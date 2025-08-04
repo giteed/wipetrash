@@ -1,5 +1,5 @@
 
-# wipetrash
+# WipeTrash
 # ![WipeTrash Icon](Burn_Folder_128x128_43380.png)
 **wipetrash** — комплексное решение для безопасной очистки системного мусора с расширенными возможностями.
 
