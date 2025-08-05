@@ -18,6 +18,21 @@ BROWSER_ERASE_SCRIPT_2="$SCRIPT_DIR/browser_paths_erase_2.sh"
 EXECUTE=0; DEBUG=0; AUTO_GENERATE=1
 
 # ──── Функции ────
+
+confirm_continue() {
+    read -p "Вы уверены, что хотите продолжить? (Y/N): " choice
+    case "$choice" in
+        [Yy]* ) 
+            return 0  # Продолжить выполнение
+            ;;
+        * ) 
+            echo "Операция отменена."
+            return 1  # Вернуться обратно
+            ;;
+    esac
+}
+
+
 show_help() {
     cat <<-EOF
 	Usage: ${0##*/} [OPTIONS]
@@ -51,6 +66,8 @@ generate_config() {
 (( BASH_VERSINFO[0] < 4 )) && die "Requires Bash 4.0+"
 [[ $EUID -eq 0 ]] && die "Do not run as root"
 [[ ! -x "$BROWSER_ERASE_SCRIPT_2" ]] && die "Missing part 2 script"
+
+confirm_continue ;
 
 # Парсинг аргументов
 while [[ $# -gt 0 ]]; do
