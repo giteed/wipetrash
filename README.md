@@ -1,7 +1,3 @@
-## ![WipeTrash Icon](Burn_Folder_128x128_43380.png)
-Вот готовый `README.md` с правильными ссылками и отображением картинки. Замените содержимое вашего ридми на следующий:
-
-
 ![WipeTrash Icon](Burn_Folder_128x128_43380.png)
 
 # WipeTrash
