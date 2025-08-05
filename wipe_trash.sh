@@ -107,7 +107,7 @@ main() {
         ;;
       # --- Изменено ---
       b|B)
-        echo -e "${YELLOW}Запуск очистки кэша браузеров (dry-run)...${NC}"
+        echo -e "${YELLOW}Запуск очистки кэша браузеров...${NC}"
         if [[ -x "$BROWSER_CLEAN_SCRIPT" ]]; then
             # Всегда добавляем --debug для тестирования
             "$BROWSER_CLEAN_SCRIPT" --debug  # <-- Теперь debug будет всегда
