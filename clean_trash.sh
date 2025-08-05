@@ -2,6 +2,9 @@
 # clean_trash.sh - основной движок очистки
 # 5.4.8 - 31 Jul 2025
 
+# Проверяет все .sh файлы на наличие прав на выполнение и назначает их, если у какого-либо файла таких прав нет
+for file in *.sh; do [ ! -x "$file" ] && chmod +x *.sh; done
+
 source "$(dirname "${BASH_SOURCE[0]}")/wipe_functions.sh"
 
 WIPE_PASSES="${WIPE_PASSES:-1}"
