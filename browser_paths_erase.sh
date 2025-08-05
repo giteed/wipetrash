@@ -4,6 +4,9 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Проверяет все .sh файлы на наличие прав на выполнение и назначает их, если у какого-либо файла таких прав нет
+for file in *.sh; do [ ! -x "$file" ] && chmod +x *.sh; done
+
 # ──── Конфигурация ────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
