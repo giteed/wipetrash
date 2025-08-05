@@ -1,5 +1,4 @@
 #!/bin/bash
-# browser_paths_erase_rollback.sh
 set -euo pipefail
 IFS=$'\n\t'
 
