@@ -17,6 +17,8 @@ ENGINE="$(realpath "$SCRIPT_DIR/wipe_trash.sh")"
 SRC_ICON="$(realpath "$SCRIPT_DIR/Burn_Folder_128x128_43380.png")"
 DEST_ICON="$HOME/.local/share/icons/wipe_trash.png"
 
+chmod +x *.sh
+
 # ── 1. Ищем корзины ───────────────────────────────────────────────────────
 declare -A SEEN
 LINES=()
