@@ -1,7 +1,7 @@
 ## ![WipeTrash Icon](Burn_Folder_128x128_43380.png)
 Вот готовый `README.md` с правильными ссылками и отображением картинки. Замените содержимое вашего ридми на следующий:
 
-```markdown
+
 ![WipeTrash Icon](Burn_Folder_128x128_43380.png)
 
 # WipeTrash
@@ -174,6 +174,4 @@ MIT License
 
 *WipeTrash Team © 2025*  
 [Репозиторий](https://github.com/giteed/wipetrash) • [Issues](https://github.com/giteed/wipetrash/issues)
-```
 
-Сохраните как `README.md` рядом с вашими скриптами — картинка и все якоря теперь будут работать.
