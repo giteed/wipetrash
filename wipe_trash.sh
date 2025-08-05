@@ -6,6 +6,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/wipe_functions.sh"
 
 ADD_SCRIPT="$SCRIPT_DIR/add_safe_dir.sh"
 SETUP_MSG="$("$SCRIPT_DIR/setup_wt.sh")"
+# --- Добавлено ---
+BROWSER_CLEAN_SCRIPT="$SCRIPT_DIR/browser_paths_erase.sh"
+# -----------------
 
 clean_history() {
   rm -f ~/.local/share/recently-used.xbel 2>/dev/null || true
@@ -24,6 +27,9 @@ show_menu() {
     ((n++))
   done
   printf "\n  ${CYAN}%d${NC}) Только history «Недавние файлы»\n" "$n"
+  # --- Изменено ---
+  echo -e "  ${CYAN}b${NC}) Очистить кэш браузеров (настройка)"
+  # -----------------
   echo -e "  a) Добавить каталоги/файлы\n  v) Просмотреть отчёты\n  r) Проверить/починить структуру\n  h) Help\n  q) Quit"
 }
 
@@ -96,6 +102,18 @@ main() {
       q|Q)
         exit 0
         ;;
+      # --- Изменено ---
+      b|B)
+        echo -e "${YELLOW}Запуск очистки кэша браузеров (dry-run)...${NC}"
+        if [[ -x "$BROWSER_CLEAN_SCRIPT" ]]; then
+            # Всегда добавляем --debug для тестирования
+            "$BROWSER_CLEAN_SCRIPT" --debug  # <-- Теперь debug будет всегда
+        else
+            echo -e "${RED}Ошибка: Скрипт '$BROWSER_CLEAN_SCRIPT' не найден или не является исполняемым.${NC}" >&2
+        fi
+        read -rp "Нажмите Enter для продолжения..."
+        ;;
+      # -----------------
       *[!0-9]*)
         echo "Неверный ввод!"
         read -rp "Нажмите Enter для продолжения..."
