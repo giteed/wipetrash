@@ -17,11 +17,6 @@ ENGINE="$(realpath "$SCRIPT_DIR/wipe_trash.sh")"
 SRC_ICON="$(realpath "$SCRIPT_DIR/Burn_Folder_128x128_43380.png")"
 DEST_ICON="$HOME/.local/share/icons/wipe_trash.png"
 
-# Проверяет все .sh файлы на наличие прав на выполнение и назначает их, если у какого-либо файла таких прав нет
-for file in *.sh; do
-    [ ! -x "$file" ] && chmod +x "$file"
-done
-
 
 # ── 1. Ищем корзины ───────────────────────────────────────────────────────
 declare -A SEEN
