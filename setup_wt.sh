@@ -96,4 +96,4 @@ else
 fi
 
 # ── 7. Делаем все *.sh исполняемыми ───────────────────────────────────────
-chmod +x "$SCRIPT_DIR"/*.sh && echo run: ./wipe_trash.sh
+chmod +x "$SCRIPT_DIR"/*.sh ;
